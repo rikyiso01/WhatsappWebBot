@@ -1,0 +1,4 @@
+start - Start the whatsapp web session
+stop - Stop the bot and whatsapp web
+associate - Associate the current chat with the written whatsapp contact
+set_default_chat - Set a chat that will not receive notifications to receive all notifications

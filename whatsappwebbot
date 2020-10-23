@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from whatsapp import Whatsapp,Message
 from time import sleep
 from configparser import ConfigParser
@@ -11,6 +12,7 @@ from telegram.bot import Bot
 from io import BytesIO
 from json import dump,load
 from telegram.ext.filters import Filters
+from argparse import ArgumentParser,Namespace
 
 DATA_DIR:str='data'
 DATA_FILE:str=join(DATA_DIR,'data.json')
@@ -28,6 +30,7 @@ USERS='users'
 
 users:List['User']=[]
 current_mode:Optional[Callable[[Update,'User'],NoReturn]]=None
+arguments:Dict[str,Any]={}
 
 class User:
     def __init__(self,bot:Bot,username:str,default_chat_id:int,associations:Dict[str,int]=None,default_chat:str=None):
@@ -36,7 +39,7 @@ class User:
         self.default_chat_id:int=default_chat_id
         self._default_chat:Optional[str]=default_chat
         self.associations:Dict[str,int]={} if associations is None else associations
-        self.whatsapp=Whatsapp(join(DATA_DIR, username))
+        self.whatsapp=Whatsapp(join(DATA_DIR, username),arguments['interactive'],arguments['show'],arguments['block'])
         self.whatsapp.qr_callback = self._create_callback()
 
     def _set_default_chat(self,default_chat:str)->NoReturn:
@@ -84,17 +87,29 @@ class User:
             self.whatsapp.select_chat(self.default_chat)
 
     def as_dict(self)->Dict[str,Any]:
-        return {USERNAME:self.username,DEFAULT_CHAT_ID:self.default_chat_id,ASSOCIATIONS:self.associations,DEFAULT_CHAT:self.default_chat}
+        return {USERNAME:self.username,DEFAULT_CHAT_ID:self.default_chat_id,
+                ASSOCIATIONS:self.associations,DEFAULT_CHAT:self.default_chat}
 
     def log(self,log:str):
         self.bot.send_message(self.default_chat_id,log)
 
 
 def main()->NoReturn:
+    parser:ArgumentParser=ArgumentParser()
+    parser.add_argument('-s','--show',action='store_true',default=False,help='Shows the chrome window')
+    parser.add_argument('-i','--interactive',action='store_true',default=False,
+                        help='Make the chrome window a normal window')
+    parser.add_argument('-b','--block-sending',action='store_true',help='Block message sending for debug')
+    args:Namespace=parser.parse_args()
+    arguments['show']=args.show
+    arguments['interactive'] = args.interactive
+    arguments['block']=args.block_sending
+
     config=ConfigParser()
     config.read(AUTH_FILE)
     if TELEGRAM_SECTION not in config:
         raise Exception('Missing or malformed auth.ini')
+
     updater:Updater=Updater(config[TELEGRAM_SECTION][TELEGRAM_TOKEN],use_context=True)
     restore_all(updater.bot)
     dispatcher:Dispatcher=updater.dispatcher

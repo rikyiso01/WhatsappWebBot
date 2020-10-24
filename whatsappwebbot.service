@@ -1,0 +1,13 @@
+[Unit]
+Description=Whatsapp Web Bot
+After=network.target
+
+[Service]
+Type=simple
+User=riky
+WorkingDirectory=/home/riky/whatsappwebbot
+ExecStart=/home/riky/.local/bin/whatsappwebbot -d
+#Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

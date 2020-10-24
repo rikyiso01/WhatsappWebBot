@@ -2,20 +2,19 @@
 from whatsapp import Whatsapp,Message,WhatsappOptions
 from time import sleep
 from configparser import ConfigParser
-from typing import NoReturn,List,Callable,Dict,Any,Optional
+from typing import NoReturn,List,Callable,Dict,Any,Optional,IO
 from telegram.ext import Updater, CommandHandler, MessageHandler
 from telegram.ext.dispatcher import Dispatcher
 from telegram.ext.callbackcontext import CallbackContext
 from telegram.update import Update
 from os.path import join,exists
 from telegram.bot import Bot
-from io import BytesIO
+from io import BytesIO,StringIO
 from json import dump,load
 from telegram.ext.filters import Filters
 from argparse import ArgumentParser,Namespace
 from logging import DEBUG,getLogger,Logger,basicConfig,INFO,ERROR
 from sys import stdout
-
 DATA_DIR:str='data'
 DATA_FILE:str=join(DATA_DIR,'data.json')
 
@@ -27,6 +26,7 @@ DEFAULT_CHAT='default_chat'
 AUTH_FILE='auth.ini'
 TELEGRAM_SECTION='telegram'
 TELEGRAM_TOKEN='token'
+ADMIN='admin'
 
 USERS='users'
 
@@ -34,7 +34,25 @@ users:List['User']=[]
 current_mode:Optional[Callable[[Update,'User'],NoReturn]]=None
 options:WhatsappOptions=WhatsappOptions()
 logger:Logger=getLogger(__name__)
-basicConfig(level=ERROR,stream=stdout)
+logs:StringIO=StringIO()
+admin:str=''
+
+class JoinStream:
+    def __init__(self,stream1,stream2):
+        self.stream1=stream1
+        self.stream2=stream2
+
+    def write(self,message):
+        self.stream1.write(message)
+        self.stream2.write(message)
+
+    def flush(self):
+        self.stream1.flush()
+        self.stream2.flush()
+
+stream:JoinStream=JoinStream(stdout,logs)
+stream:IO[str]
+basicConfig(level=ERROR,stream=stream)
 
 class User:
     def __init__(self,bot:Bot,username:str,default_chat_id:int,associations:Dict[str,int]=None,default_chat:str=None):
@@ -98,13 +116,17 @@ class User:
                 ASSOCIATIONS:self.associations,DEFAULT_CHAT:self.default_chat}
 
     def __repr__(self)->str:
-        return str(self.as_dict())
+        data:Dict[str,Any]=self.as_dict()
+        del data[DEFAULT_CHAT]
+        del data[ASSOCIATIONS]
+        return str(data)
 
     def log(self,message:str):
         self.bot.send_message(self.default_chat_id,message)
 
 
 def main()->NoReturn:
+    global admin
     parser:ArgumentParser=ArgumentParser()
     parser.add_argument('-s','--show',action='store_true',default=False,help='Shows the chrome window')
     parser.add_argument('-i','--interactive',action='store_true',default=False,
@@ -122,12 +144,15 @@ def main()->NoReturn:
     config.read(AUTH_FILE)
     if TELEGRAM_SECTION not in config:
         raise Exception('Missing or malformed auth.ini')
+    admin = config[TELEGRAM_SECTION][ADMIN]
 
     updater:Updater=Updater(config[TELEGRAM_SECTION][TELEGRAM_TOKEN],use_context=True)
     restore_all(updater.bot)
     dispatcher:Dispatcher=updater.dispatcher
     dispatcher.add_handler(CommandHandler('start',start))
     dispatcher.add_handler(CommandHandler('stop',stop))
+    dispatcher.add_handler(CommandHandler('logs',show_logs))
+    dispatcher.add_handler(CommandHandler('screenshot',take_screenshot))
     dispatcher.add_handler(CommandHandler('associate',create_set_mode(associate)))
     dispatcher.add_handler(CommandHandler('set_default_chat',create_set_mode(set_default_chat)))
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command,on_message))
@@ -176,6 +201,25 @@ def stop(update:Update,_context:CallbackContext):
         user.whatsapp.close()
         users.remove(user)
         update.message.reply_text('Stopped')
+    except NoSuchUserError as e:
+        e.log_error(update)
+
+def show_logs(update:Update,_context:CallbackContext):
+    try:
+        username:str=update.message.from_user.username
+        log('logs',username=username)
+        if username==admin:
+            update.message.reply_text(logs.getvalue())
+        else:
+            update.message.reply_text('You are not authorized for this command')
+    except NoSuchUserError as e:
+        e.log_error(update)
+
+def take_screenshot(update:Update,_context:CallbackContext):
+    try:
+        user:User=find_user(update.message.from_user.username)
+        log('screenshot',user=user)
+        update.message.reply_photo(BytesIO(user.whatsapp.driver.get_screenshot_as_png()))
     except NoSuchUserError as e:
         e.log_error(update)
 
@@ -249,7 +293,7 @@ class WhatsappUserNotFoundError(Exception):
 def log(command:str,**kwargs):
     message:str=f'/{command}'
     for key in kwargs.keys():
-        message+=f' {key}={kwargs[key]}, '
+        message+=f' {key}={kwargs[key]}'
     logger.info(message)
 
 if __name__ == '__main__':

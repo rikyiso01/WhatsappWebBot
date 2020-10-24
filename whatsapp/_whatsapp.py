@@ -9,6 +9,8 @@ from typing import Optional,NoReturn,Callable,List
 from atexit import register
 from time import sleep
 from pyvirtualdisplay import Display
+from logging import getLogger,INFO,DEBUG,Logger
+from os.path import basename
 
 QR_CODE="//canvas[@aria-label='Scan me!']"
 HOME_PAGE_IMAGE='//div[@data-asset-intro-image-light="true"][@style="transform: scale(1); opacity: 1;"]'
@@ -20,14 +22,24 @@ MESSAGES='//div[contains(@class,"message-in focusable-list-item")][@tabindex="-1
 TEXT_IN_MESSAGE='.//span[contains(@class,"selectable-text invisible-space copyable-text")]'
 WHO_FROM_UNREAD='./../../../../../div[1]/div[1]'
 
+class WhatsappOptions:
+    def __init__(self):
+        self.interactive:bool=False
+        self.show:bool=False
+        self.block:bool=False
+        self.debug:bool=False
+
 class Whatsapp:
-    def __init__(self,profile_dir:str,interactive:bool=False,show:bool=False,block:bool=False)->NoReturn:
+    def __init__(self,profile_dir:str,options:WhatsappOptions=WhatsappOptions())->NoReturn:
         self.display:Optional[Display]=None
-        if not interactive:
-            self.display=Display(visible=show)
+        if not options.interactive:
+            self.display=Display(visible=options.show)
             self.display.start()
         self._logged_in:bool=False
-        self.block:bool=block
+        self.block:bool=options.block
+        self.name: str = basename(profile_dir)
+        self.logger:Logger=getLogger(self.name)
+        self.logger.setLevel(DEBUG if options.debug else INFO)
         self.running:bool=True
         self.profile_dir:str=profile_dir
         self._qr_callback:Optional[Callable[[bytes],NoReturn]]=None
@@ -38,7 +50,8 @@ class Whatsapp:
         self.driver:WebDriver = Chrome(chrome_options=options)
         self.driver.get("https://web.whatsapp.com")
         register(self.close)
-        self._qr_thread:Thread=Thread(target=self._qr_code_thread)
+        self._thread_name:str=f'{self.name}-qr-thread'
+        self._qr_thread:Thread=Thread(target=self._qr_code_thread,name=self._thread_name)
         self._qr_thread.start()
 
     def _set_qr_callback(self,qr_callback:Optional[Callable[[bytes],NoReturn]])->NoReturn:
@@ -72,14 +85,16 @@ class Whatsapp:
                     except TimeoutException:
                         continue
             except TimeoutException:
-                print('Skipping login')
+                self.logger.debug(f'The user {self.name} is already logged in')
 
             WebDriverWait(self.driver, 20).until(self._get_element_in_thread(HOME_PAGE_IMAGE))
+            self.logger.debug(f'Main page for {self.name} loaded')
             self._logged_in = True
             if self.logged_in_callback is not None:
                 self.logged_in_callback()
         except ThreadStopError:
-            pass
+            self.logger.debug(f'The thread {self._thread_name} was stopped by interrupt')
+        self.logger.debug(f'The thread {self._thread_name} is stopping normally')
 
     def _get_element_in_thread(self,xpath:str)->Callable[[WebDriver],WebElement]:
         def method(driver:WebDriver)->WebElement:
@@ -148,7 +163,6 @@ class Whatsapp:
         input_box = self.driver.find_element_by_xpath(INPUT_BOX)
         text:str=message if self.block else message + Keys.ENTER
         input_box.send_keys(text)
-
 
 class Message:
     def __init__(self,sender:str,message:str):

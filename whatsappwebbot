@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from whatsapp import Whatsapp,Message
+from whatsapp import Whatsapp,Message,WhatsappOptions
 from time import sleep
 from configparser import ConfigParser
 from typing import NoReturn,List,Callable,Dict,Any,Optional
@@ -13,6 +13,8 @@ from io import BytesIO
 from json import dump,load
 from telegram.ext.filters import Filters
 from argparse import ArgumentParser,Namespace
+from logging import DEBUG,getLogger,Logger,basicConfig,INFO,ERROR
+from sys import stdout
 
 DATA_DIR:str='data'
 DATA_FILE:str=join(DATA_DIR,'data.json')
@@ -30,7 +32,9 @@ USERS='users'
 
 users:List['User']=[]
 current_mode:Optional[Callable[[Update,'User'],NoReturn]]=None
-arguments:Dict[str,Any]={}
+options:WhatsappOptions=WhatsappOptions()
+logger:Logger=getLogger(__name__)
+basicConfig(level=ERROR,stream=stdout)
 
 class User:
     def __init__(self,bot:Bot,username:str,default_chat_id:int,associations:Dict[str,int]=None,default_chat:str=None):
@@ -39,7 +43,7 @@ class User:
         self.default_chat_id:int=default_chat_id
         self._default_chat:Optional[str]=default_chat
         self.associations:Dict[str,int]={} if associations is None else associations
-        self.whatsapp=Whatsapp(join(DATA_DIR, username),arguments['interactive'],arguments['show'],arguments['block'])
+        self.whatsapp=Whatsapp(join(DATA_DIR, username),options)
         self.whatsapp.qr_callback = self._create_callback()
 
     def _set_default_chat(self,default_chat:str)->NoReturn:
@@ -63,6 +67,8 @@ class User:
         if not self.whatsapp.logged_in:
             return
         messages:List[Message]=self.whatsapp.get_unread_messages()
+        if len(messages)>0:
+            logger.debug(f'User {self.username} has received {len(messages)} message/es')
         for message in messages:
             text:str=''
             chat_id:int=self.default_chat_id
@@ -82,6 +88,7 @@ class User:
         if who is None:
             who=message.split(' ')[0]
             message=message[len(who)+1:]
+        logger.debug(f'User {self.username} sent a message to {who}')
         self.whatsapp.send_message(who,message)
         if self.default_chat is not None:
             self.whatsapp.select_chat(self.default_chat)
@@ -90,8 +97,11 @@ class User:
         return {USERNAME:self.username,DEFAULT_CHAT_ID:self.default_chat_id,
                 ASSOCIATIONS:self.associations,DEFAULT_CHAT:self.default_chat}
 
-    def log(self,log:str):
-        self.bot.send_message(self.default_chat_id,log)
+    def __repr__(self)->str:
+        return str(self.as_dict())
+
+    def log(self,message:str):
+        self.bot.send_message(self.default_chat_id,message)
 
 
 def main()->NoReturn:
@@ -100,10 +110,13 @@ def main()->NoReturn:
     parser.add_argument('-i','--interactive',action='store_true',default=False,
                         help='Make the chrome window a normal window')
     parser.add_argument('-b','--block-sending',action='store_true',help='Block message sending for debug')
+    parser.add_argument('-d','--debug',action='store_true',help='Starts the server in debug mode')
     args:Namespace=parser.parse_args()
-    arguments['show']=args.show
-    arguments['interactive'] = args.interactive
-    arguments['block']=args.block_sending
+    options.show=args.show
+    options.interactive = args.interactive
+    options.block=args.block_sending
+    options.debug=args.debug
+    logger.setLevel(DEBUG if options.debug else INFO)
 
     config=ConfigParser()
     config.read(AUTH_FILE)
@@ -120,22 +133,25 @@ def main()->NoReturn:
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command,on_message))
     updater.start_polling()
     try:
-        print('Started')
+        logger.info('Started')
+        logger.debug('Debug Mode On')
         notify_all('The bot is online')
         while True:
             for user in users:
                 user.receive_messages()
             sleep(3)
     finally:
-        print('Shutting down')
+        logger.info('Shutting down')
         notify_all('The bot is shutting down')
         updater.stop()
         save_all()
 
 def start(update:Update,context:CallbackContext)->NoReturn:
     username:str=update.message.from_user.username
-    update.message.reply_text(f'Your username is {username}')
-    user:User=User(context.bot,username,update.message.chat_id)
+    chat_id:int=update.message.chat_id
+    log('start',username=username,chat_id=chat_id)
+    update.message.reply_text(f'Your username is {username} with chat id {chat_id}')
+    user:User=User(context.bot,username,chat_id)
 
     def logged_in():
         user.log('Log in successful')
@@ -146,14 +162,17 @@ def start(update:Update,context:CallbackContext)->NoReturn:
 def associate(update:Update,user:User):
     try:
         who:str=update.message.text
-        user.add_association(who,update.message.chat_id)
-        update.message.reply_text('The association was successful, you can now send messages over Whatsapp with this chat')
+        chat_id:int=update.message.chat_id
+        user.add_association(who,chat_id)
+        log('associate',user=user,who=who,chat_id=chat_id)
+        update.message.reply_text('The association was successful')
     except WhatsappUserNotFoundError as e:
         e.log_error(update)
 
-def stop(update:Update,context:CallbackContext):
+def stop(update:Update,_context:CallbackContext):
     try:
         user:User=find_user(update.message.from_user.username)
+        log('stop',user=user)
         user.whatsapp.close()
         users.remove(user)
         update.message.reply_text('Stopped')
@@ -162,12 +181,14 @@ def stop(update:Update,context:CallbackContext):
 
 def set_default_chat(update:Update,user:User):
     try:
-        user.default_chat=update.message.text
+        default_chat:str=update.message.text
+        user.default_chat=default_chat
+        log('set_default_chat',default_chat=default_chat)
         update.message.reply_text('Default chat successfully changed')
     except NoSuchUserError as e:
         e.log_error(update)
 
-def on_message(update:Update,context:CallbackContext)->NoReturn:
+def on_message(update:Update,_context:CallbackContext)->NoReturn:
     global current_mode
     try:
         user:User=find_user(update.message.from_user.username)
@@ -191,12 +212,12 @@ def restore_all(bot:Bot):
         for user in data[USERS]:
             users.append(User(bot,user[USERNAME],user[DEFAULT_CHAT_ID],user[ASSOCIATIONS],user[DEFAULT_CHAT]))
 
-def notify_all(log:str):
+def notify_all(message:str):
     for user in users:
-        user.log(log)
+        user.log(message)
 
 def create_set_mode(mode:Callable[[Update,User],NoReturn])->Callable[[Update,CallbackContext],NoReturn]:
-    def method(update:Update,context:CallbackContext):
+    def method(_update:Update,_context:CallbackContext):
         global current_mode
         current_mode=mode
     return method
@@ -213,6 +234,7 @@ class NoSuchUserError(Exception):
         super(NoSuchUserError, self).__init__(f'User {username} not found')
 
     def log_error(self,update:Update):
+        logger.error(str(self),exc_info=True)
         update.message.reply_text(f'User {self.username} not found, have you logged in with /start?')
 
 class WhatsappUserNotFoundError(Exception):
@@ -221,7 +243,14 @@ class WhatsappUserNotFoundError(Exception):
         super(WhatsappUserNotFoundError, self).__init__(f'Whatsapp user {username} not found')
 
     def log_error(self,update:Update):
+        logger.error(str(self), exc_info=True)
         update.message.reply_text(f'Whatsapp user {self.username} not found, is it right?')
+
+def log(command:str,**kwargs):
+    message:str=f'/{command}'
+    for key in kwargs.keys():
+        message+=f' {key}={kwargs[key]}, '
+    logger.info(message)
 
 if __name__ == '__main__':
     main()

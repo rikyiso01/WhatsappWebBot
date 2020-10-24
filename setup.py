@@ -5,7 +5,7 @@ with open("README.md", 'r') as f:
 
 setup(
    name='whatsappwebbot',
-   version='0.0.2',
+   version='0.0.3',
    description='A python telegram bot to forward whatsapp messages to telegram',
    license="GPL-3",
    long_description=long_description,

@@ -21,6 +21,8 @@ UNREAD_MESSAGES='//span[contains(@aria-label,"unread message")]'
 MESSAGES='//div[contains(@class,"message-in focusable-list-item")][@tabindex="-1"]'
 TEXT_IN_MESSAGE='.//span[contains(@class,"selectable-text invisible-space copyable-text")]'
 WHO_FROM_UNREAD='./../../../../../div[1]/div[1]'
+SENDER_IN_MESSAGE='./div/div/div/div/span'
+# //*[@id="main"]/div[3]/div/div/div[3]/div[17]/div/div/div/div[1]/span[1]
 
 class WhatsappOptions:
     def __init__(self):
@@ -137,6 +139,9 @@ class Whatsapp:
         self._clear_search_bar(who)
         return result
 
+    def _is_group(self)->bool:
+        pass
+
     def get_messages(self,who:str,how_many:int)->List['Message']:
         self.select_chat(who)
         messages: List[WebElement] = self.driver.find_elements_by_xpath(MESSAGES)
@@ -144,7 +149,12 @@ class Whatsapp:
         for i in range(len(messages) - 1, len(messages) - how_many - 1, -1):
             try:
                 text = messages[i].find_element_by_xpath(TEXT_IN_MESSAGE)
-                result.append(Message(who,text.text))
+                sender=None
+                try:
+                    sender = messages[i].find_element_by_xpath(SENDER_IN_MESSAGE).text
+                except NoSuchElementException:
+                    print('Not in a group')
+                result.append(Message(who,text.text,sender))
             except NoSuchElementException:
                 pass
         return result
@@ -165,9 +175,13 @@ class Whatsapp:
         input_box.send_keys(text)
 
 class Message:
-    def __init__(self,sender:str,message:str):
+    def __init__(self,sender:str,message:str,who:str=None):
         self.sender:str=sender
         self.message:str=message
+        self.who:Optional[str]=who
+
+    def __repr__(self):
+        return str({'sender':self.sender,'message':self.message,'who':self.who})
 
 
 class ThreadStopError(Exception):

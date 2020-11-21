@@ -94,7 +94,10 @@ class User:
                 text=f'{message.sender}: '
             else:
                 chat_id=self.associations[message.sender]
+            if message.who is not None:
+                text+=f'{message.who}: '
             self.bot.send_message(chat_id,text+message.message)
+            print(message)
         if len(messages)>0 and self.default_chat is not None:
             self.whatsapp.select_chat(self.default_chat)
 

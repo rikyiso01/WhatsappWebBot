@@ -5,7 +5,7 @@ with open("README.md", 'r') as f:
 
 setup(
    name='whatsappwebbot',
-   version='0.0.5',
+   version='0.0.8',
    description='A python telegram bot to forward whatsapp messages to telegram',
    license="GPL-3",
    long_description=long_description,
@@ -14,5 +14,5 @@ setup(
    url="https://github.com/RikyIsola/WhatsappWebBot",
    packages=find_packages(),
    install_requires=['selenium', 'python-telegram-bot','PyVirtualDisplay'],
-   scripts=['whatsappwebbot']
+   scripts=['scripts/whatsappwebbot']
 )

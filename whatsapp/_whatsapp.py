@@ -14,8 +14,9 @@ from os.path import basename
 
 QR_CODE="//canvas[@aria-label='Scan me!']"
 HOME_PAGE_IMAGE='//div[@data-asset-intro-image-light="true"][@style="transform: scale(1); opacity: 1;"]'
+HOME_PAGE_IMAGE2='//div[@data-asset-intro-image-light="true"][@style="opacity: 1;"]'
 SEARCH_BAR='//div[@contenteditable="true"][@data-tab="3"]'
-CONTACT_BOX='//span[@title="{}"]'
+CONTACT_BOX='//span[contains(@title,"{}")]'
 INPUT_BOX='//div[@contenteditable="true"][@spellcheck="true"]'
 UNREAD_MESSAGES='//span[contains(@aria-label,"unread message")]'
 MESSAGES='//div[contains(@class,"message-in focusable-list-item")][@tabindex="-1"]'
@@ -89,7 +90,7 @@ class Whatsapp:
             except TimeoutException:
                 self.logger.debug(f'The user {self.name} is already logged in')
 
-            WebDriverWait(self.driver, 20).until(self._get_element_in_thread(HOME_PAGE_IMAGE))
+            WebDriverWait(self.driver, 20).until(self._get_element_in_thread(HOME_PAGE_IMAGE,HOME_PAGE_IMAGE2))
             self.logger.debug(f'Main page for {self.name} loaded')
             self._logged_in = True
             if self.logged_in_callback is not None:
@@ -98,11 +99,17 @@ class Whatsapp:
             self.logger.debug(f'The thread {self._thread_name} was stopped by interrupt')
         self.logger.debug(f'The thread {self._thread_name} is stopping normally')
 
-    def _get_element_in_thread(self,xpath:str)->Callable[[WebDriver],WebElement]:
+    def _get_element_in_thread(self,*x_paths:str)->Callable[[WebDriver],WebElement]:
         def method(driver:WebDriver)->WebElement:
             if not self.running:
                 raise ThreadStopError()
-            return driver.find_element_by_xpath(xpath)
+            err:Exception=ValueError('No xpath provided')
+            for xpath in x_paths:
+                try:
+                    return driver.find_element_by_xpath(xpath)
+                except NoSuchElementException as e:
+                    err=e
+            raise err
         return method
 
     def select_chat(self,who:str):

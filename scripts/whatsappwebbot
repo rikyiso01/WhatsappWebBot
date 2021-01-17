@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+from whatsapp import WhatsappOptions
+from configparser import ConfigParser
+from typing import NoReturn
+from argparse import ArgumentParser,Namespace
+from whatsappwebbot import WhatsappWebBot
+from sys import stdout
+
+TELEGRAM_SECTION='telegram'
+TELEGRAM_TOKEN='token'
+TELEGRAM_TEST_TOKEN='test-token'
+ADMIN='admin'
+
+def main()->NoReturn:
+    parser:ArgumentParser=ArgumentParser()
+    parser.add_argument('-s','--show',action='store_true',default=False,help='Shows the chrome window')
+    parser.add_argument('-i','--interactive',action='store_true',default=False,
+                        help='Make the chrome window a normal window')
+    parser.add_argument('-b','--block-sending',action='store_true',help='Block message sending for debug')
+    parser.add_argument('-d','--debug',action='store_true',help='Starts the server in debug mode')
+    parser.add_argument('-t', '--test-bot', action='store_true', help='Starts the server with the tet bot')
+    parser.add_argument('auth_file',type=str,help='The file to read the configuration from')
+    parser.add_argument('data_dir',type=str,help='The directory to use to store the data')
+    args:Namespace=parser.parse_args()
+    options: WhatsappOptions = WhatsappOptions()
+    options.show=args.show
+    options.interactive = args.interactive
+    options.block=args.block_sending
+    options.debug=args.debug
+
+    config=ConfigParser()
+    config.read(args.auth_file)
+    if TELEGRAM_SECTION not in config:
+        raise Exception('Missing or malformed auth.ini')
+    admin = config[TELEGRAM_SECTION][ADMIN]
+    token:str=config[TELEGRAM_SECTION][TELEGRAM_TEST_TOKEN] if args.test_bot \
+        else config[TELEGRAM_SECTION][TELEGRAM_TOKEN]
+    WhatsappWebBot(options,token,args.data_dir,int(admin),stdout).start()
+
+if __name__ == '__main__':
+    main()

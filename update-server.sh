@@ -1,0 +1,1 @@
+ssh "$1" 'pip3 install --upgrade whatsappwebbot && systemctl restart whatsappwebbot'

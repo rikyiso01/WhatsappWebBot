@@ -6,8 +6,9 @@ After=network.target
 Type=simple
 User=
 WorkingDirectory=/home//whatsappwebbot
-ExecStart=/home//.local/bin/whatsappwebbot -d
-#Restart=on-failure
+ExecStart=/home//.local/bin/whatsappwebbot -d auth.ini data
+KillSignal=SIGINT
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

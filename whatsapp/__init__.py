@@ -1,1 +1,1 @@
-from ._whatsapp import Whatsapp,Message,WhatsappOptions
+from ._whatsapp import Whatsapp,Message,WhatsappOptions,MessageType

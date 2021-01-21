@@ -16,9 +16,11 @@ from io import StringIO
 USERS='users'
 
 class WhatsappWebBot:
-    def __init__(self,options:WhatsappOptions,token:str,data_dir:str,admin:int,stdout:Optional[TextIO]):
+    def __init__(self,options:WhatsappOptions,token:str,data_dir:str,admin:int,stdout:Optional[TextIO],
+                 silent_start:bool):
         self.updater: Updater = Updater(token, use_context=True)
         self.users:List[User]=[]
+        self.silent_start:bool=silent_start
         self.logs:StringIO=StringIO()
         self.logger:Logger=getLogger('WhatsappWebBot')
         level:int=DEBUG if options.debug else INFO
@@ -55,7 +57,8 @@ class WhatsappWebBot:
         try:
             self.logger.info('Started')
             self.logger.debug('Debug Mode On')
-            self.notify_all('The bot is online')
+            if not self.silent_start:
+                self.notify_all('The bot is online')
             while True:
                 for user in self.users:
                     user.receive_messages()
@@ -64,9 +67,12 @@ class WhatsappWebBot:
             pass
         finally:
             self.logger.info('Shutting down')
-            self.notify_all('The bot is shutting down')
+            if not self.silent_start:
+                self.notify_all('The bot is shutting down')
             self.updater.stop()
             self.save_all()
+            for user in self.users:
+                user.close()
 
     def on_message(self,update: Update, _context: CallbackContext) -> NoReturn:
         try:

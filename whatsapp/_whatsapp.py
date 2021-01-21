@@ -5,12 +5,14 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.common.exceptions import TimeoutException,NoSuchElementException
 from selenium.webdriver.common.keys import Keys
 from threading import Thread
-from typing import Optional,NoReturn,Callable,List
-from atexit import register
+from typing import Optional,NoReturn,Callable,List,Tuple,Union
+from atexit import register,unregister
 from time import sleep
 from pyvirtualdisplay import Display
 from logging import getLogger,INFO,DEBUG,Logger
 from os.path import basename
+from base64 import b64decode
+from enum import Enum
 
 QR_CODE="//canvas[@aria-label='Scan me!']"
 HOME_PAGE_IMAGE='//div[@data-asset-intro-image-light="true"][@style="transform: scale(1); opacity: 1;"]'
@@ -21,9 +23,12 @@ INPUT_BOX='//div[@contenteditable="true"][@spellcheck="true"]'
 UNREAD_MESSAGES='//span[contains(@aria-label,"unread message")]'
 MESSAGES='//div[contains(@class,"message-in focusable-list-item")][@tabindex="-1"]'
 TEXT_IN_MESSAGE='.//span[contains(@class,"selectable-text invisible-space copyable-text")]'
+AUDIO_IN_MESSAGE='.//audio'
+IMAGE_IN_MESSAGE='.//img[contains(@src,"blob:")]'
 WHO_FROM_UNREAD='./../../../../../div[1]/div[1]'
-SENDER_IN_MESSAGE='./div/div/div/div/span'
-# //*[@id="main"]/div[3]/div/div/div[3]/div[17]/div/div/div/div[1]/span[1]
+SENDER_IN_MESSAGE='.{}/span'
+DIV='/div[1]'
+IMAGE_CAPTION='./div[1]/div[1]/div[1]/div[1]/div/div[1]/span/span'
 
 class WhatsappOptions:
     def __init__(self):
@@ -66,10 +71,12 @@ class Whatsapp:
     logged_in:bool=property(lambda self:self._logged_in)
 
     def close(self)->NoReturn:
+        unregister(self.close)
         self.running=False
         self.driver.quit()
         if self.display is not None:
             self.display.stop()
+        self._qr_thread.join()
 
     def wait_for_login(self):
         self._qr_thread.join()
@@ -154,17 +161,41 @@ class Whatsapp:
         messages: List[WebElement] = self.driver.find_elements_by_xpath(MESSAGES)
         result: List[Message] = []
         for i in range(len(messages) - 1, len(messages) - how_many - 1, -1):
+            data=self._get_message(messages[i])
+            if data is None:
+                continue
+            message,message_type,divs=data
+            sender:Optional[str]
             try:
-                text = messages[i].find_element_by_xpath(TEXT_IN_MESSAGE)
-                sender=None
-                try:
-                    sender = messages[i].find_element_by_xpath(SENDER_IN_MESSAGE).text
-                except NoSuchElementException:
-                    print('Not in a group')
-                result.append(Message(who,text.text,sender))
+                sender = messages[i].find_element_by_xpath(SENDER_IN_MESSAGE.format(DIV * divs)).text
             except NoSuchElementException:
-                pass
+                self.logger.debug('Not in a group')
+                sender=None
+            result.append(Message(who, message, sender, message_type))
         return result
+
+    def _get_message(self,div:WebElement)->Optional[Tuple[Union[str,bytes,Tuple[str,bytes]],'MessageType',int]]:
+        try:
+            image: WebElement = div.find_element_by_xpath(IMAGE_IN_MESSAGE)
+            caption:str
+            try:
+                caption=div.find_element_by_xpath(IMAGE_CAPTION).text
+            except NoSuchElementException:
+                caption=''
+            return (caption,self._download_blob(image.get_attribute('src'))), MessageType.IMAGE, 6
+        except NoSuchElementException:
+            pass
+        try:
+            text = div.find_element_by_xpath(TEXT_IN_MESSAGE)
+            return text.text,MessageType.TEXT,4
+        except NoSuchElementException:
+            pass
+        try:
+            audio: WebElement = div.find_element_by_xpath(AUDIO_IN_MESSAGE)
+            return self._download_blob(audio.get_attribute('src')),MessageType.AUDIO,5
+        except NoSuchElementException:
+            pass
+        return None
 
     def get_unread_messages(self)->List['Message']:
         result:List[Message]=[]
@@ -181,14 +212,45 @@ class Whatsapp:
         text:str=message if self.block else message + Keys.ENTER
         input_box.send_keys(text)
 
+    def _download_blob(self,url:str)->bytes:
+        result = self.driver.execute_async_script(
+            'var uri = arguments[0];'
+            'var callback = arguments[1];'
+            'var toBase64 = function(buffer){for(var r,n=new Uint8Array(buffer),'
+            't=n.length,a=new Uint8Array(4*Math.ceil(t/3)),i=new Uint8Array(64),o=0,c=0;64>c;++c)'
+            'i[c]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charCodeAt(c);'
+            'for(c=0;t-t%3>c;c+=3,o+=4)r=n[c]<<16|n[c+1]<<8|n[c+2],a[o]=i[r>>18],'
+            'a[o+1]=i[r>>12&63],a[o+2]=i[r>>6&63],a[o+3]=i[63&r];'
+            'return t%3===1?(r=n[t-1],a[o]=i[r>>2],a[o+1]=i[r<<4&63],a[o+2]=61,a[o+3]=61):'
+            't%3===2&&(r=(n[t-2]<<8)+n[t-1],a[o]=i[r>>10],a[o+1]=i[r>>4&63],a[o+2]=i[r<<2&63],a[o+3]=61),'
+            'new TextDecoder("ascii").decode(a)};'
+            'var xhr = new XMLHttpRequest();'
+            "xhr.responseType = 'arraybuffer';"
+            'xhr.onload = function(){ callback(toBase64(xhr.response)) };'
+            'xhr.onerror = function(){ callback(xhr.status) };'
+            "xhr.open('GET', uri);"
+            'xhr.send();',url)
+        if type(result) == int:
+            raise Exception("Request failed with status %s" % result)
+        return b64decode(result)
+
+class MessageType(Enum):
+    TEXT=0
+    AUDIO=1
+    IMAGE=2
+
 class Message:
-    def __init__(self,sender:str,message:str,who:str=None):
+    def __init__(self,sender:str,message:Union[str,bytes,Tuple[str,bytes]],who:str=None,
+                 message_type:MessageType=MessageType.TEXT):
         self.sender:str=sender
-        self.message:str=message
+        self.message:Union[str,bytes,Tuple[str,bytes]]=message
+        self.message_type:MessageType=message_type
         self.who:Optional[str]=who
 
     def __repr__(self):
-        return str({'sender':self.sender,'message':self.message,'who':self.who})
+        return str({'sender':self.sender,
+                    'message':self.message if self.message_type==MessageType.TEXT else self.message_type.name,
+                    'who':self.who})
 
 
 class ThreadStopError(Exception):

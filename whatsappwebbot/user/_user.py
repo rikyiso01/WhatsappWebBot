@@ -1,6 +1,6 @@
 from typing import Dict,Optional,Callable,NoReturn,List,Any
 from io import BytesIO
-from whatsapp import Whatsapp,Message
+from whatsapp import Whatsapp,Message,MessageType
 from os.path import join
 from whatsappwebbot.error import WhatsappUserNotFoundError
 from telegram.error import Unauthorized
@@ -58,7 +58,15 @@ class User:
             if message.who is not None:
                 text+=f'{message.who}: '
             try:
-                self.whatsappwebbot.updater.bot.send_message(chat_id,text+message.message)
+                if message.message_type==MessageType.TEXT:
+                    self.whatsappwebbot.updater.bot.send_message(chat_id,text+message.message)
+                elif message.message_type==MessageType.AUDIO:
+                    self.whatsappwebbot.updater.bot.send_audio(chat_id,BytesIO(message.message),caption=text)
+                elif message.message_type==MessageType.IMAGE:
+                    caption,data=message.message
+                    self.whatsappwebbot.updater.bot.send_photo(chat_id,BytesIO(data),caption=text+caption)
+                else:
+                    raise NotImplementedError(f'Message type {message.message_type.name} not supported')
             except Unauthorized:
                 self.delete_user()
             print(message)
@@ -115,3 +123,6 @@ class User:
         self.whatsappwebbot.users.remove(self)
         rmtree(self.get_user_folder(),ignore_errors=True)
         rmtree(self.get_user_folder(), ignore_errors=True)
+
+    def close(self)->NoReturn:
+        self.whatsapp.close()

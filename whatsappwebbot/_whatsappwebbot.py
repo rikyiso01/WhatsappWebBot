@@ -12,6 +12,7 @@ from os import mkdir
 from json import dump,load
 from whatsapp import WhatsappOptions
 from io import StringIO
+from threading import Thread
 
 USERS='users'
 
@@ -34,12 +35,15 @@ class WhatsappWebBot:
             self.logger.addHandler(StreamHandler(stdout))
         self.data_dir:str=data_dir
         self.admin:int=admin
+        self._run:bool=True
         self.options:WhatsappOptions=options
+        self._thread:Optional[Thread]=None
         dispatcher: Dispatcher = self.updater.dispatcher
         dispatcher.add_handler(CommandHandler('start',self.start_command))
         for command in COMMANDS.keys():
             dispatcher.add_handler(self.create_command_handler(command))
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, self.on_message))
+        dispatcher.add_handler(MessageHandler(Filters.photo,self.on_photo))
         self.restore_all()
 
     def create_command_handler(self,command:str):
@@ -52,6 +56,10 @@ class WhatsappWebBot:
                 self.log_error(exception,update.message.chat_id)
         return CommandHandler(command,method)
 
+    def async_start(self,name:Optional[str]=None):
+        self._thread=Thread(target=self.start,name=name)
+        self._thread.start()
+
     def start(self):
         self.updater.start_polling()
         try:
@@ -59,7 +67,7 @@ class WhatsappWebBot:
             self.logger.debug('Debug Mode On')
             if not self.silent_start:
                 self.notify_all('The bot is online')
-            while True:
+            while self._run:
                 for user in self.users:
                     user.receive_messages()
                 sleep(3)
@@ -74,6 +82,11 @@ class WhatsappWebBot:
             for user in self.users:
                 user.close()
 
+    def stop(self):
+        self._run=False
+        if self._thread is not None:
+            self._thread.join()
+
     def on_message(self,update: Update, _context: CallbackContext) -> NoReturn:
         try:
             user: User = self.find_user(update.message.from_user.id)
@@ -82,6 +95,15 @@ class WhatsappWebBot:
                 user.current_mode = None
             else:
                 user.send_message(update.message.chat_id, update.message.text)
+        except NoSuchUserError as e:
+            self.log_error(e,update.message.chat_id)
+
+    def on_photo(self,update:Update, _context:CallbackContext)->NoReturn:
+        try:
+            user:User=self.find_user(update.message.from_user.id)
+            user.send_photo(update.message.chat_id,update.message.photo[0].get_file().download_as_bytearray(),
+                            '' if update.message.caption is None else update.message.caption)
+
         except NoSuchUserError as e:
             self.log_error(e,update.message.chat_id)
 

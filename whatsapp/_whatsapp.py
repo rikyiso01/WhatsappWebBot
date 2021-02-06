@@ -13,6 +13,7 @@ from logging import getLogger,INFO,DEBUG,Logger
 from os.path import basename
 from base64 import b64decode
 from enum import Enum
+from os.path import join,abspath
 
 QR_CODE="//canvas[@aria-label='Scan me!']"
 HOME_PAGE_IMAGE='//div[@data-asset-intro-image-light="true"][@style="transform: scale(1); opacity: 1;"]'
@@ -29,22 +30,25 @@ WHO_FROM_UNREAD='./../../../../../div[1]/div[1]'
 SENDER_IN_MESSAGE='.{}/span'
 DIV='/div[1]'
 IMAGE_CAPTION='./div[1]/div[1]/div[1]/div[1]/div/div[1]/span/span'
+ADD_FILE='//span[@data-testid="{0}"][@data-icon="{0}"]'
+CLIP='clip'
+ATTACH_IMAGE='attach-image'
+SEND='send'
 
 class WhatsappOptions:
     def __init__(self):
         self.interactive:bool=False
         self.show:bool=False
-        self.block:bool=False
         self.debug:bool=False
 
 class Whatsapp:
-    def __init__(self,profile_dir:str,options:WhatsappOptions=WhatsappOptions())->NoReturn:
+    def __init__(self,profile_dir:str,default_chat:Optional[str],options:WhatsappOptions=WhatsappOptions())->NoReturn:
         self.display:Optional[Display]=None
         if not options.interactive:
             self.display=Display(visible=options.show)
             self.display.start()
         self._logged_in:bool=False
-        self.block:bool=options.block
+        self._default_chat:Optional[str]=default_chat
         self.name: str = basename(profile_dir)
         self.logger:Logger=getLogger(self.name)
         self.logger.setLevel(DEBUG if options.debug else INFO)
@@ -55,12 +59,22 @@ class Whatsapp:
         self._qr_code_png:Optional[bytes]=None
         options:ChromeOptions=ChromeOptions()
         options.add_argument(f'--user-data-dir={profile_dir}')
-        self.driver:WebDriver = Chrome(chrome_options=options)
+        self.driver:WebDriver = Chrome(options=options)
         self.driver.get("https://web.whatsapp.com")
         register(self.close)
         self._thread_name:str=f'{self.name}-qr-thread'
         self._qr_thread:Thread=Thread(target=self._qr_code_thread,name=self._thread_name)
         self._qr_thread.start()
+
+    @property
+    def default_chat(self)->str:
+        return self._default_chat
+
+    @default_chat.setter
+    def default_chat(self,default_chat:str)->NoReturn:
+        if not self.user_exists(default_chat):
+            raise UserNotFoundError(default_chat)
+        self._default_chat=default_chat
 
     def _set_qr_callback(self,qr_callback:Optional[Callable[[bytes],NoReturn]])->NoReturn:
         self._qr_callback=qr_callback
@@ -119,7 +133,9 @@ class Whatsapp:
             raise err
         return method
 
-    def select_chat(self,who:str):
+    def _select_chat(self,who:Optional[str]):
+        if who is None:
+            return
         try:
             selected_contact:WebElement=self._search_user(who)
         except TimeoutException:
@@ -157,7 +173,7 @@ class Whatsapp:
         pass
 
     def get_messages(self,who:str,how_many:int)->List['Message']:
-        self.select_chat(who)
+        self._select_chat(who)
         messages: List[WebElement] = self.driver.find_elements_by_xpath(MESSAGES)
         result: List[Message] = []
         for i in range(len(messages) - 1, len(messages) - how_many - 1, -1):
@@ -199,18 +215,40 @@ class Whatsapp:
 
     def get_unread_messages(self)->List['Message']:
         result:List[Message]=[]
+        reset:bool=False
         for bubble in self.driver.find_elements_by_xpath(UNREAD_MESSAGES):
             how_many:int=int(bubble.text)
             who:str=bubble.find_element_by_xpath(WHO_FROM_UNREAD).text
             result.extend(self.get_messages(who,how_many))
+            reset=True
+        if reset:
+            self._select_chat(self._default_chat)
         return result
 
-    def send_message(self,who:str,message:str):
-        self.select_chat(who)
+    def send_message(self,who:str,message:str)->NoReturn:
+        self._select_chat(who)
 
         input_box = self.driver.find_element_by_xpath(INPUT_BOX)
-        text:str=message if self.block else message + Keys.ENTER
-        input_box.send_keys(text)
+        input_box.send_keys(message + Keys.ENTER)
+
+        self._select_chat(self.default_chat)
+
+    def send_photo(self,who:str,photo:bytes,caption:str)->NoReturn:
+        self._select_chat(who)
+
+        self.driver.find_element_by_xpath(ADD_FILE.format(CLIP)).click()
+        button:WebElement=WebDriverWait(self.driver,2)\
+            .until(lambda driver:self.driver.find_element_by_xpath(ADD_FILE.format(ATTACH_IMAGE)))
+        inp:WebElement=button.find_element_by_xpath('./../input')
+        path:str=abspath(join(self.profile_dir,'.photo.png'))
+        with open(path,'wb') as f:
+            f.write(photo)
+        inp.send_keys(path)
+        WebDriverWait(self.driver, 2).until(lambda driver: self.driver.find_element_by_xpath(ADD_FILE.format(SEND)))
+        caption_bar=self.driver.find_element_by_xpath(INPUT_BOX)
+        caption_bar.send_keys(caption+Keys.ENTER)
+
+        self._select_chat(self._default_chat)
 
     def _download_blob(self,url:str)->bytes:
         result = self.driver.execute_async_script(

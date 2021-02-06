@@ -133,3 +133,5 @@ data/
 /pypi.txt
 deb_dist/
 *.tar.gz
+telethon.session
+telethon.session-journal

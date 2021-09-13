@@ -1,5 +1,0 @@
-selenium
-python-telegram-bot
-PyVirtualDisplay
-pyyaml
-telethon

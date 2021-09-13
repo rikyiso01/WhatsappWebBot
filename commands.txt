@@ -1,9 +1,3 @@
-start - Start the whatsapp web session
-stop - Stop the bot and whatsapp web and deletes all data associated with the user
-associate - Associate the current chat with the written whatsapp contact
-associations - List all the associations
-show_default_chat - Show the current default chat
-set_default_chat - Set a chat that will not receive notifications to receive all notifications
-logs - Show the logs
-screenshot - Takes a screenshot of the selenium session
-associate_with_list - Create all the associations from a list
+start - Starts the bot
+set_default_whatsapp_chat - Whatsapp chat that will not receive any message to use to simplify the process of gathering messages
+associate - Associate the current Telegram chat with the given Whatsapp chat

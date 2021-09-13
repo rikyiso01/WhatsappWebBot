@@ -128,10 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-auth.yml
 data/
-/pypi.txt
-deb_dist/
-*.tar.gz
 telethon.session
 telethon.session-journal

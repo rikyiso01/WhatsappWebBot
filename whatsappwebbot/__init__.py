@@ -1,1 +1,3 @@
-from ._whatsappwebbot import WhatsappWebBot
+from ._whatsappwebbot import main
+
+__all__ = ["main"]

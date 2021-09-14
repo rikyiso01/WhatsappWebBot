@@ -1,7 +1,7 @@
 from aiogram.types import Message as TelegramMessage  # type: ignore
 from aiogram.types.message import ContentType  # type: ignore
 from ._user import User
-from whatsapp import Chat as WhatsappChat, TextMessage, ImageMessage, AudioMessage
+from whatsapp import Chat as WhatsappChat, TextMessage, ImageMessage
 from typing import Callable
 from collections import Awaitable
 from tempfile import NamedTemporaryFile

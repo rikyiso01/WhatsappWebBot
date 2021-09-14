@@ -1,6 +1,6 @@
 from aiogram import Bot  # type: ignore
 from aiogram.types import InputFile  # type: ignore
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 from whatsapp import Chat as WhatsappChat
 
 TelegramChatId = int

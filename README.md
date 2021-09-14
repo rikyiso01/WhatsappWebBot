@@ -48,15 +48,15 @@ You need to install [Docker](https://www.docker.com/)
 
 1. Get a Telegram API Key by asking the [BotFather](https://telegram.dog/BotFather)
 
-2. Set the bot commands by sending to the bot father /setcommands followed by a message containing the content of the file [commands.txt](https://raw.githubusercontent.com/RikyIsola/WhatsappWebBot/main/commands.txt)
+2. Optional. Set the bot commands by sending to the bot father /setcommands followed by a message containing the content of the file [commands.txt](https://raw.githubusercontent.com/RikyIsola/WhatsappWebBot/main/commands.txt)
 
-3. Create a folder where your data will be stored and in it create a file called token.txt
+3. Create a folder where your data will be stored and in it copy the file [config-example.yml](https://raw.githubusercontent.com/RikyIsola/WhatsappWebBot/main/config-example.yml), rename it into config.yml, open it and change the settings you need
 
 ## Usage
 
 Run the bot with
 ```bash
-docker run -v "Your data folder":"/data" whatsappwebbot
+docker run -v "Your data folder absolute path":/data whatsappwebbot
 ```
 
 You can now interact with it on Telegram

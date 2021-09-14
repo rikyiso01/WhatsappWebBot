@@ -120,7 +120,11 @@ class Whatsapp:
         self._display = Display(visible=show)
         # Data dir is used to restore the cookies between sessions
         self._chrome = Chrome(
-            **{"goog:chromeOptions": {"args": [f"--user-data-dir={profile_dir}"]}}
+            **{
+                "goog:chromeOptions": {
+                    "args": [f"--user-data-dir={profile_dir}", "--no-sandbox"]
+                }
+            }
         )
         self._session: Optional[Session] = None
         # Callback to use to send the qr code to scan

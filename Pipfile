@@ -10,6 +10,10 @@ arsenic = "*"
 pyvirtualdisplay = "*"
 
 [dev-packages]
+mypy = "*"
+flake8 = "*"
+bandit = "*"
+pytest = "*"
 
 [requires]
 python_version = "3.9"
